@@ -222,7 +222,7 @@ async def start_night_phase(chat_id, ctx):
                 pass
 
         # انتظر حتى تختار المافيا
-        for _ in range(60):
+        for _ in range(86400):
             await asyncio.sleep(1)
             if chat_id not in games:
                 return
@@ -256,7 +256,7 @@ async def start_night_phase(chat_id, ctx):
                 pass
 
         # انتظر حتى يختار الدكتور
-        for _ in range(60):
+        for _ in range(86400):
             await asyncio.sleep(1)
             if chat_id not in games:
                 return
@@ -290,7 +290,7 @@ async def start_night_phase(chat_id, ctx):
                 pass
 
         # انتظر حتى يختار المحقق
-        for _ in range(60):
+        for _ in range(86400):
             await asyncio.sleep(1)
             if chat_id not in games:
                 return
