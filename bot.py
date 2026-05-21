@@ -28,7 +28,6 @@ def new_game():
         "investigated": None,
         "mafia_target": None,
         "mafia_voted": set(),
-        "night_timer_task": None,
     }
 
 def assign_roles(players):
@@ -61,15 +60,15 @@ def check_winner(game):
         return "مافيا"
     return None
 
-# ========================
-# الأوامر
-# ========================
-
 def joining_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✋ انضم للعبة", callback_data="join"),
          InlineKeyboardButton("🚪 خروج", callback_data="leave")]
     ])
+
+# ========================
+# الأوامر
+# ========================
 
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -114,19 +113,15 @@ async def leave_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     chat_id = query.message.chat_id
     uid = query.from_user.id
-
     if chat_id not in games or games[chat_id]["phase"] != "joining":
         await query.answer("ما تقدر تخرج الحين!", show_alert=True)
         return
-
     game = games[chat_id]
     if uid not in game["players"]:
         await query.answer("أنت مو مسجل أصلاً!", show_alert=True)
         return
-
     del game["players"][uid]
     names = [p["name"] for p in game["players"].values()]
-
     if names:
         await query.edit_message_text(
             f"🎭 *لعبة المافيا*\n\n👥 اللاعبون ({len(names)}):\n" +
@@ -141,9 +136,9 @@ async def leave_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=joining_keyboard(),
             parse_mode="Markdown"
         )
-    await query.answer(f"خرجت من اللعبة 👋")
+    await query.answer("خرجت من اللعبة 👋")
 
-
+async def begin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id not in games:
         await update.message.reply_text("ما في لعبة! اكتب /newgame")
@@ -187,7 +182,7 @@ async def leave_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await start_night_phase(chat_id, ctx)
 
 # ========================
-# مرحلة الليل مع مؤقتات
+# مرحلة الليل
 # ========================
 
 async def start_night_phase(chat_id, ctx):
@@ -203,7 +198,6 @@ async def start_night_phase(chat_id, ctx):
     detective_players = {uid: p for uid, p in alive.items() if p["role"] == "محقق"}
 
     async def send_countdown(uid, text, seconds, keyboard):
-        """يرسل رسالة مع مؤقت يتحدث كل 5 ثواني"""
         try:
             msg = await ctx.bot.send_message(
                 uid,
@@ -230,7 +224,7 @@ async def start_night_phase(chat_id, ctx):
         except Exception:
             pass
 
-    # مرحلة المافيا
+    # مرحلة المافيا - 20 ثانية
     if mafia_players:
         await ctx.bot.send_message(
             chat_id,
@@ -253,7 +247,7 @@ async def start_night_phase(chat_id, ctx):
         if games[chat_id].get("mafia_target") is None and targets:
             games[chat_id]["mafia_target"] = random.choice(list(targets.keys()))
 
-    # مرحلة الدكتور
+    # مرحلة الدكتور - 10 ثواني
     if doctor_players:
         await ctx.bot.send_message(
             chat_id,
@@ -275,7 +269,7 @@ async def start_night_phase(chat_id, ctx):
         if games[chat_id].get("healed") is None and alive:
             games[chat_id]["healed"] = random.choice(list(alive.keys()))
 
-    # مرحلة المحقق
+    # مرحلة المحقق - 10 ثواني
     if detective_players:
         await ctx.bot.send_message(
             chat_id,
@@ -374,7 +368,7 @@ async def resolve_night(chat_id, ctx):
     game["votes"] = {}
     await ctx.bot.send_message(
         chat_id,
-        f"{result_msg}\n\n👥 *اللاعبون الأحياء:*\n{alive_list}\n\n☀️ *بدأ النقاش!*\nمن تظنه المافيا؟ صوّتوا لإعدامه!\n⏱️ لديكم وقت للتصويت:",
+        f"{result_msg}\n\n👥 *اللاعبون الأحياء:*\n{alive_list}\n\n☀️ *بدأ النقاش!*\nمن تظنه المافيا؟ صوّتوا لإعدامه!",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -390,7 +384,6 @@ async def vote_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     game = games[chat_id]
 
-    # تخطي التصويت
     if query.data == "skip_vote":
         await query.answer("تم تخطي التصويت!")
         await resolve_vote(chat_id, ctx, skipped=True)
@@ -400,7 +393,6 @@ async def vote_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer("مو وقت التصويت!", show_alert=True)
         return
 
-    # تحقق إن اللاعب في اللعبة وحي
     if uid not in game["players"]:
         await query.answer("أنت لست لاعباً في هذه اللعبة!", show_alert=True)
         return
@@ -411,12 +403,10 @@ async def vote_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     target_id = int(query.data.split("_")[1])
 
-    # تحقق إن الهدف حي
     if target_id not in game["players"] or not game["players"][target_id]["alive"]:
         await query.answer("هذا اللاعب خارج اللعبة!", show_alert=True)
         return
 
-    # سجل الصوت
     already_voted = uid in game["votes"]
     game["votes"][uid] = target_id
     target_name = game["players"][target_id]["name"]
@@ -454,7 +444,6 @@ async def resolve_vote(chat_id, ctx, skipped=False):
     max_votes = max(vote_count.values())
     candidates = [uid for uid, v in vote_count.items() if v == max_votes]
 
-    # إذا تعادل، ما يُعدم أحد
     if len(candidates) > 1:
         game["phase"] = "night"
         game["day"] += 1
