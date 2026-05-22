@@ -4,7 +4,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا")
+TOKEN = os.environ.get("BOT_TOKEN", "8740678984:AAHOm17QEcCWXbjr5RJiZg22mYLm4f2MJiM")
 games = {}
 
 ROLES = {"مافيا": "🔫", "مواطن": "👤", "دكتور": "💊", "محقق": "🔍"}
@@ -164,20 +164,19 @@ async def run_night(chat_id, ctx):
             "🌑 *حلّ الظلام على المدينة...*\n\n🔫 همسات المافيا تتردد في الأزقة وهم يتآمرون لاختيار ضحيتهم...",
             parse_mode="Markdown")
         targets = {uid: p for uid, p in alive.items() if p["role"] != "مافيا"}
-        kb = [[InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"mafia_{uid}")] for uid, p in targets.items()]
+        # تمرير chat_id المجموعة في الـ callback_data لضمان العثور على اللعبة بشكل صحيح
+        kb = [[InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"mafia_{chat_id}_{uid}")] for uid, p in targets.items()]
         for uid in mafia_uids:
             try:
                 await ctx.bot.send_message(uid, "🔫 *اختر من تغتال الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
             except Exception:
                 pass
-        # انتظر حتى تكتمل أصوات المافيا
         while True:
             await asyncio.sleep(1)
             if chat_id not in games: return
             g = games[chat_id]
             if g["mafia_target"] is not None:
                 break
-            # تحقق إذا كل المافيا صوتوا
             if len(g["mafia_votes"]) >= len(mafia_uids):
                 vc = {}
                 for t in g["mafia_votes"].values():
@@ -191,7 +190,7 @@ async def run_night(chat_id, ctx):
         await ctx.bot.send_message(chat_id,
             "💊 *الدكتور استيقظ على صوت خطوات مريبة...*\n\nيسارع ليقرر من يحميه بدوائه قبل فوات الأوان...",
             parse_mode="Markdown")
-        kb = [[InlineKeyboardButton(f"💊 {p['name']}", callback_data=f"heal_{uid}")] for uid, p in alive.items()]
+        kb = [[InlineKeyboardButton(f"💊 {p['name']}", callback_data=f"heal_{chat_id}_{uid}")] for uid, p in alive.items()]
         for uid in doctor_uids:
             try:
                 await ctx.bot.send_message(uid, "💊 *اختر من تشفي الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -210,7 +209,7 @@ async def run_night(chat_id, ctx):
             "🔍 *المحقق يتسلل في ظلام الليل...*\n\nعيناه تراقبان كل تفصيلة وهو يستعد للكشف عن أحد المشتبه بهم...",
             parse_mode="Markdown")
         det_targets = {uid: p for uid, p in alive.items() if uid not in detect_uids}
-        kb = [[InlineKeyboardButton(f"🔍 {p['name']}", callback_data=f"invest_{uid}")] for uid, p in det_targets.items()]
+        kb = [[InlineKeyboardButton(f"🔍 {p['name']}", callback_data=f"invest_{chat_id}_{uid}")] for uid, p in det_targets.items()]
         for uid in detect_uids:
             try:
                 await ctx.bot.send_message(uid, "🔍 *اختر من تحقق معه الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -232,16 +231,19 @@ async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data  = query.data
     uid   = query.from_user.id
 
-    # إيجاد اللعبة
-    game = None
-    chat_id = None
-    for cid, g in games.items():
-        if uid in g["players"]:
-            game = g
-            chat_id = cid
-            break
+    # تفكيك البيانات لاستخراج الـ chat_id والـ target_id بدقة
+    parts = data.split("_")
+    action = parts[0]
+    chat_id = int(parts[1])
+    target_id = int(parts[2])
 
-    if not game or game["phase"] != "night":
+    if chat_id not in games:
+        await query.answer("اللعبة انتهت أو غير موجودة!", show_alert=True)
+        return
+
+    game = games[chat_id]
+
+    if game["phase"] != "night":
         await query.answer("مو وقت هذا الإجراء!", show_alert=True)
         return
 
@@ -251,16 +253,15 @@ async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     step = game.get("night_step")
 
-    if data.startswith("mafia_") and step == "mafia":
-        alive = get_alive(game)
-        mafia_uids = [u for u, p in alive.items() if p["role"] == "مافيا"]
+    if action == "mafia" and step == "mafia":
         if game["players"][uid]["role"] != "مافيا":
             await query.answer("هذا مو دورك!", show_alert=True)
             return
-        target_id = int(data.split("_")[1])
         game["mafia_votes"][uid] = target_id
         await query.edit_message_text(f"✅ اخترت *{game['players'][target_id]['name']}* هدفاً!", parse_mode="Markdown")
-        # أبلغ بقية المافيا
+        
+        alive = get_alive(game)
+        mafia_uids = [u for u, p in alive.items() if p["role"] == "مافيا"]
         if len(mafia_uids) > 1:
             for other in mafia_uids:
                 if other != uid:
@@ -270,20 +271,18 @@ async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         pass
         await query.answer("✅ تم تسجيل اختيارك!")
 
-    elif data.startswith("heal_") and step == "doctor":
+    elif action == "heal" and step == "doctor":
         if game["players"][uid]["role"] != "دكتور":
             await query.answer("هذا مو دورك!", show_alert=True)
             return
-        target_id = int(data.split("_")[1])
         game["healed"] = target_id
         await query.edit_message_text(f"✅ ستشفي *{game['players'][target_id]['name']}* الليلة!", parse_mode="Markdown")
         await query.answer("✅ تم!")
 
-    elif data.startswith("invest_") and step == "detective":
+    elif action == "invest" and step == "detective":
         if game["players"][uid]["role"] != "محقق":
             await query.answer("هذا مو دورك!", show_alert=True)
             return
-        target_id = int(data.split("_")[1])
         game["investigated"] = target_id
         is_mafia = game["players"][target_id]["role"] == "مافيا"
         await query.edit_message_text(
@@ -436,7 +435,6 @@ async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-
 async def stop_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id not in games:
@@ -454,9 +452,12 @@ def main():
     app.add_handler(CommandHandler("stop",    stop_cmd))
     app.add_handler(CallbackQueryHandler(join_callback,   pattern="^join$"))
     app.add_handler(CallbackQueryHandler(leave_callback,  pattern="^leave$"))
-    app.add_handler(CallbackQueryHandler(night_callback,  pattern="^(mafia|heal|invest)_"))
-    app.add_handler(CallbackQueryHandler(vote_callback,   pattern="^(vote_|skip_vote)"))
-    print("✅ البوت يعمل...")
+    
+    # الـ Handlers المحدثة للتعامل مع الـ Regex الجديد والبيانات الممررة
+    app.add_handler(CallbackQueryHandler(night_callback,  pattern="^(mafia|heal|invest)_.*"))
+    app.add_handler(CallbackQueryHandler(vote_callback,   pattern="^(vote_.*|skip_vote)"))
+    
+    print("✅ البوت يعمل بكفاءة...")
     app.run_polling()
 
 if __name__ == "__main__":
