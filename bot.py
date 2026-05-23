@@ -82,7 +82,8 @@ async def join_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     game["players"][user.id] = {"name": user.first_name, "role": None, "alive": True}
     names = [p["name"] for p in game["players"].values()]
-    await update.message.reply_text(
+    
+    await query.edit_message_text(
         f"🎭 *لعبة المافيا*\n\n👥 اللاعبون ({len(names)}):\n" +
         "\n".join(f"• {n}" for n in names) +
         "\n\nاكتب /begin لبدء اللعبة (4 لاعبين على الأقل)",
@@ -166,7 +167,8 @@ async def run_night(chat_id, ctx):
             "🌑 *حلّ الظلام على المدينة...*\n\n🔫 همسات المافيا تتردد في الأزقة وهم يتآمرون لاختيار ضحيتهم... (المهلة: 3 دقائق)",
             parse_mode="Markdown")
         targets = {uid: p for uid, p in alive.items() if p["role"] != "مافيا"}
-        kb = [[InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"mafia_{chat_id}_{uid}")] for uid, p in targets.items()]
+        # تم تبسيط الـ callback_data لضمان عدم تجاوز الحد المسموح في تليجرام
+        kb = [[InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"mafia_{uid}")] for uid, p in targets.items()]
         for uid in mafia_uids:
             try:
                 await ctx.bot.send_message(uid, "🔫 *اختر من تغتال الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -194,14 +196,14 @@ async def run_night(chat_id, ctx):
                     try: await ctx.bot.send_message(uid, "⏱️ *انتهى الوقت! تم اختيار هدف عشوائي.*", parse_mode="Markdown")
                     except Exception: pass
 
-    # ── مرحلة الدكتور (تمويه ذكي للجميع) ──
+    # ── مرحلة الدكتور (تمويه ذكي) ──
     game["night_step"] = "doctor"
     await ctx.bot.send_message(chat_id,
         "💊 *الدكتور استيقظ على صوت خطوات مريبة...*\n\nيسارع ليقرر من يحميه بدوائه قبل فوات الأوان... (المهلة: 3 دقائق)",
         parse_mode="Markdown")
     
     if doctor_uids:
-        kb = [[InlineKeyboardButton(f"💊 {p['name']}", callback_data=f"heal_{chat_id}_{uid}")] for uid, p in alive.items()]
+        kb = [[InlineKeyboardButton(f"💊 {p['name']}", callback_data=f"heal_{uid}")] for uid, p in alive.items()]
         for uid in doctor_uids:
             try:
                 await ctx.bot.send_message(uid, "💊 *اختر من تشفي الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -222,13 +224,12 @@ async def run_night(chat_id, ctx):
                     try: await ctx.bot.send_message(uid, "⏱️ *انتهى الوقت! تم اختيار شخص عشوائي لحمايته.*", parse_mode="Markdown")
                     except Exception: pass
     else:
-        # إذا الدكتور ميت: البوت يوهم الجروب بالانتظار لمدة عشوائية ثم يختار تلقائياً بالخلفية
         fake_wait = random.randint(15, 35)
         await asyncio.sleep(fake_wait)
         if chat_id in games:
             games[chat_id]["healed"] = random.choice(list(alive.keys()))
 
-    # ── مرحلة المحقق (تمويه ذكي للجميع) ──
+    # ── مرحلة المحقق (تمويه ذكي) ──
     game["night_step"] = "detective"
     await ctx.bot.send_message(chat_id,
         "🔍 *المحقق يتسلل في ظلام الليل...*\n\nعيناه تراقبان كل تفصيلة وهو يستعد للكشف عن أحد المشتبه بهم... (المهلة: 3 دقائق)",
@@ -236,7 +237,7 @@ async def run_night(chat_id, ctx):
     
     if detect_uids:
         det_targets = {uid: p for uid, p in alive.items() if uid not in detect_uids}
-        kb = [[InlineKeyboardButton(f"🔍 {p['name']}", callback_data=f"invest_{chat_id}_{uid}")] for uid, p in det_targets.items()]
+        kb = [[InlineKeyboardButton(f"🔍 {p['name']}", callback_data=f"invest_{uid}")] for uid, p in det_targets.items()]
         for uid in detect_uids:
             try:
                 await ctx.bot.send_message(uid, "🔍 *اختر من تحقق معه الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -260,7 +261,6 @@ async def run_night(chat_id, ctx):
                         await ctx.bot.send_message(uid, f"⏱️ *انتهى الوقت! تم التحقيق عشوائياً مع:*\n*{games[chat_id]['players'][target_rand]['name']}* وهو {'🔴 مافيا!' if is_mafia_rand else '🟢 بريء!'}", parse_mode="Markdown")
                     except Exception: pass
     else:
-        # إذا المحقق ميت: انتظار تمويهي ثم اختيار عشوائي مخفي
         fake_wait = random.randint(15, 35)
         await asyncio.sleep(fake_wait)
         if chat_id in games and alive:
@@ -278,16 +278,18 @@ async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data  = query.data
     uid   = query.from_user.id
 
-    parts = data.split("_")
-    action = parts[0]
-    chat_id = int(parts[1])
-    target_id = int(parts[2])
+    # ربط وتحديد اللعبة بدقة عبر التحقق من وجود اللاعب داخل قائمة الألعاب النشطة بالخلفية
+    game = None
+    chat_id = None
+    for cid, g in games.items():
+        if uid in g["players"]:
+            game = g
+            chat_id = cid
+            break
 
-    if chat_id not in games:
+    if not game:
         await query.answer("اللعبة انتهت أو غير موجودة!", show_alert=True)
         return
-
-    game = games[chat_id]
 
     if game["phase"] != "night":
         await query.answer("مو وقت هذا الإجراء!", show_alert=True)
@@ -298,6 +300,9 @@ async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     step = game.get("night_step")
+    parts = data.split("_")
+    action = parts[0]
+    target_id = int(parts[1])
 
     if action == "mafia" and step == "mafia":
         if game["players"][uid]["role"] != "مافيا":
@@ -369,7 +374,7 @@ async def resolve_night(chat_id, ctx):
         await end_game(chat_id, ctx, winner)
         return
 
-        game["phase"] = "day"
+    game["phase"] = "day"
     alive = get_alive(game)
     alive_list = "\n".join(f"• {p['name']}" for p in alive.values())
     kb = [[InlineKeyboardButton(f"🗳️ {p['name']}", callback_data=f"vote_{uid}")] for uid, p in alive.items()]
@@ -409,7 +414,11 @@ async def vote_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer("أنت خارج اللعبة!", show_alert=True)
         return
 
-    target_id = int(query.data.split("_")[1])
+    try:
+        target_id = int(query.data.split("_")[1])
+    except Exception:
+        return
+
     if not game["players"].get(target_id, {}).get("alive"):
         await query.answer("هذا اللاعب خارج اللعبة!", show_alert=True)
         return
