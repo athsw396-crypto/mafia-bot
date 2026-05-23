@@ -143,7 +143,7 @@ async def begin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(2)
     await start_mafia_phase(chat_id, ctx)
 
-# ── متحكمات الليل بالأحداث (بدون حلقة while للتأكد من الاستجابة) ──────────────────
+# ── متحكمات الليل بالأحداث الفورية ──────────────────────────────────────────
 
 async def start_mafia_phase(chat_id, ctx):
     if chat_id not in games: return
@@ -161,24 +161,26 @@ async def start_mafia_phase(chat_id, ctx):
             try: await ctx.bot.send_message(uid, "🔫 *اختر من تغتال الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
             except Exception: pass
         
-        # إنشاء مؤقت مستقل لمدة 3 دقائق لدور المافيا
         game["timeout_task"] = asyncio.create_task(mafia_timeout(chat_id, ctx, targets, mafia_uids))
     else:
-        await start_doctor_phase(chat_id, ctx)
+        # استخدام create_task لفصل التشغيل لكي لا تتعطل الإجابة للتليجرام
+        asyncio.create_task(start_doctor_phase(chat_id, ctx))
 
 async def mafia_timeout(chat_id, ctx, targets, mafia_uids):
-    await asyncio.sleep(180) # 3 دقائق مهلة
-    if chat_id in games and games[chat_id]["night_step"] == "mafia":
-        games[chat_id]["mafia_target"] = random.choice(list(targets.keys()))
-        for uid in mafia_uids:
-            try: await ctx.bot.send_message(uid, "⏱️ *انتهى الوقت! تم اختيار هدف عشوائي.*", parse_mode="Markdown")
-            except Exception: pass
-        await start_doctor_phase(chat_id, ctx)
+    try:
+        await asyncio.sleep(180)
+        if chat_id in games and games[chat_id]["night_step"] == "mafia":
+            games[chat_id]["mafia_target"] = random.choice(list(targets.keys()))
+            for uid in mafia_uids:
+                try: await ctx.bot.send_message(uid, "⏱️ *انتهى الوقت! تم اختيار هدف عشوائي.*", parse_mode="Markdown")
+                except Exception: pass
+            await start_doctor_phase(chat_id, ctx)
+    except asyncio.CancelledError:
+        pass
 
 async def start_doctor_phase(chat_id, ctx):
     if chat_id not in games: return
     game = games[chat_id]
-    # إلغاء مؤقت المافيا السابق إذا تم الانتقال مبكراً
     if game["timeout_task"]: game["timeout_task"].cancel()
     
     game["night_step"] = "doctor"
@@ -194,23 +196,28 @@ async def start_doctor_phase(chat_id, ctx):
             except Exception: pass
         game["timeout_task"] = asyncio.create_task(doctor_timeout(chat_id, ctx, alive, doctor_uids))
     else:
-        # التمويه النفسي: انتظار عشوائي لمنع كشف موت الدكتور
         game["timeout_task"] = asyncio.create_task(fake_doctor_timeout(chat_id, ctx, alive))
 
 async def doctor_timeout(chat_id, ctx, alive, doctor_uids):
-    await asyncio.sleep(180)
-    if chat_id in games and games[chat_id]["night_step"] == "doctor":
-        games[chat_id]["healed"] = random.choice(list(alive.keys()))
-        for uid in doctor_uids:
-            try: await ctx.bot.send_message(uid, "⏱️ *انتهى الوقت! تم اختيار شخص عشوائي لحمايته.*", parse_mode="Markdown")
-            except Exception: pass
-        await start_detective_phase(chat_id, ctx)
+    try:
+        await asyncio.sleep(180)
+        if chat_id in games and games[chat_id]["night_step"] == "doctor":
+            games[chat_id]["healed"] = random.choice(list(alive.keys()))
+            for uid in doctor_uids:
+                try: await ctx.bot.send_message(uid, "⏱️ *انتهى الوقت! تم اختيار شخص عشوائي لحمايته.*", parse_mode="Markdown")
+                except Exception: pass
+            await start_detective_phase(chat_id, ctx)
+    except asyncio.CancelledError:
+        pass
 
 async def fake_doctor_timeout(chat_id, ctx, alive):
-    await asyncio.sleep(random.randint(15, 30))
-    if chat_id in games and games[chat_id]["night_step"] == "doctor":
-        games[chat_id]["healed"] = random.choice(list(alive.keys()))
-        await start_detective_phase(chat_id, ctx)
+    try:
+        await asyncio.sleep(random.randint(15, 30))
+        if chat_id in games and games[chat_id]["night_step"] == "doctor":
+            games[chat_id]["healed"] = random.choice(list(alive.keys()))
+            await start_detective_phase(chat_id, ctx)
+    except asyncio.CancelledError:
+        pass
 
 async def start_detective_phase(chat_id, ctx):
     if chat_id not in games: return
@@ -234,24 +241,30 @@ async def start_detective_phase(chat_id, ctx):
         game["timeout_task"] = asyncio.create_task(fake_detective_timeout(chat_id, ctx, alive))
 
 async def detective_timeout(chat_id, ctx, det_targets, detect_uids):
-    await asyncio.sleep(180)
-    if chat_id in games and games[chat_id]["night_step"] == "detective":
-        games[chat_id]["investigated"] = random.choice(list(det_targets.keys()))
-        for uid in detect_uids:
-            try:
-                t_rand = games[chat_id]["investigated"]
-                is_mafia_rand = games[chat_id]["players"][t_rand]["role"] == "مافيا"
-                await ctx.bot.send_message(uid, f"⏱️ *انتهى الوقت! تم التحقيق عشوائياً مع:*\n*{games[chat_id]['players'][t_rand]['name']}* وهو {'🔴 مافيا!' if is_mafia_rand else '🟢 بريء!'}", parse_mode="Markdown")
-            except Exception: pass
-        await end_night_phase(chat_id, ctx)
+    try:
+        await asyncio.sleep(180)
+        if chat_id in games and games[chat_id]["night_step"] == "detective":
+            games[chat_id]["investigated"] = random.choice(list(det_targets.keys()))
+            for uid in detect_uids:
+                try:
+                    t_rand = games[chat_id]["investigated"]
+                    is_mafia_rand = games[chat_id]["players"][t_rand]["role"] == "مافيا"
+                    await ctx.bot.send_message(uid, f"⏱️ *انتهى الوقت! تم التحقيق عشوائياً مع:*\n*{games[chat_id]['players'][t_rand]['name']}* وهو {'🔴 مافيا!' if is_mafia_rand else '🟢 بريء!'}", parse_mode="Markdown")
+                except Exception: pass
+            await end_night_phase(chat_id, ctx)
+    except asyncio.CancelledError:
+        pass
 
 async def fake_detective_timeout(chat_id, ctx, alive):
-    await asyncio.sleep(random.randint(15, 30))
-    if chat_id in games and games[chat_id]["night_step"] == "detective":
-        if alive:
-            det_targets = {uid: p for uid, p in alive.items() if p["role"] != "محقق"}
-            if det_targets: games[chat_id]["investigated"] = random.choice(list(det_targets.keys()))
-        await end_night_phase(chat_id, ctx)
+    try:
+        await asyncio.sleep(random.randint(15, 30))
+        if chat_id in games and games[chat_id]["night_step"] == "detective":
+            if alive:
+                det_targets = {uid: p for uid, p in alive.items() if p["role"] != "محقق"}
+                if det_targets: games[chat_id]["investigated"] = random.choice(list(det_targets.keys()))
+            await end_night_phase(chat_id, ctx)
+    except asyncio.CancelledError:
+        pass
 
 async def end_night_phase(chat_id, ctx):
     if chat_id not in games: return
@@ -260,7 +273,7 @@ async def end_night_phase(chat_id, ctx):
     game["night_step"] = None
     await resolve_night(chat_id, ctx)
 
-# ── callback الليل (محدث بالكامل ليستدعي الخطوة التالية فوراً عند الاختيار) ──
+# ── callback الليل (الاستجابة الفورية ثم معالجة الخطوة التالية بالخلفية) ──
 
 async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -292,46 +305,49 @@ async def night_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if game["players"][uid]["role"] != "مافيا":
             await query.answer("هذا مو دورك!", show_alert=True)
             return
-        game["mafia_votes"][uid] = target_id
+        
+        # 1. الإجابة الفورية للتليجرام وتعديل الرسالة لمنع الـ Timeout
+        await query.answer("✅ تم تسجيل صوتك!")
         await query.edit_message_text(f"✅ اخترت *{game['players'][target_id]['name']}* هدفاً!", reply_markup=None, parse_mode="Markdown")
         
+        game["mafia_votes"][uid] = target_id
         alive = get_alive(game)
         mafia_uids = [u for u, p in alive.items() if p["role"] == "مافيا"]
         
-        # إذا كل المافيا الأحياء صوتوا، ننتقل فوراً للدور التالي
         if len(game["mafia_votes"]) >= len(mafia_uids):
             vc = {}
             for t in game["mafia_votes"].values(): vc[t] = vc.get(t, 0) + 1
             game["mafia_target"] = max(vc, key=vc.get)
-            await query.answer("✅ اكتملت أصوات المافيا!")
-            await start_doctor_phase(chat_id, ctx)
+            # 2. تشغيل المرحلة التالية كـ Task منفصل في الخلفية
+            asyncio.create_task(start_doctor_phase(chat_id, ctx))
         else:
             for other in mafia_uids:
                 if other != uid:
                     try: await ctx.bot.send_message(other, f"⚠️ زميلك اختار *{game['players'][target_id]['name']}*، اختر أنت أيضاً!", parse_mode="Markdown")
                     except Exception: pass
-            await query.answer("✅ تم تسجيل صوتك!")
 
     elif action == "heal" and step == "doctor":
         if game["players"][uid]["role"] != "دكتور":
             await query.answer("هذا مو دورك!", show_alert=True)
             return
-        game["healed"] = target_id
-        await query.edit_message_text(f"✅ ستشفي *{game['players'][target_id]['name']}* الليلة!", reply_markup=None, parse_mode="Markdown")
+        
         await query.answer("✅ تم الشفاء!")
-        # الانتقال الفوري للدور التالي
-        await start_detective_phase(chat_id, ctx)
+        await query.edit_message_text(f"✅ ستشفي *{game['players'][target_id]['name']}* الليلة!", reply_markup=None, parse_mode="Markdown")
+        
+        game["healed"] = target_id
+        asyncio.create_task(start_detective_phase(chat_id, ctx))
 
     elif action == "invest" and step == "detective":
         if game["players"][uid]["role"] != "محقق":
             await query.answer("هذا مو دورك!", show_alert=True)
             return
-        game["investigated"] = target_id
+        
+        await query.answer("✅ تم التحقيق!")
         is_mafia = game["players"][target_id]["role"] == "مافيا"
         await query.edit_message_text(f"🔍 نتيجة التحقيق:\n*{game['players'][target_id]['name']}* هو {'🔴 مافيا!' if is_mafia else '🟢 بريء!'}", reply_markup=None, parse_mode="Markdown")
-        await query.answer("✅ تم التحقيق!")
-        # إنهاء الليل فوراً
-        await end_night_phase(chat_id, ctx)
+        
+        game["investigated"] = target_id
+        asyncio.create_task(end_night_phase(chat_id, ctx))
     else:
         await query.answer("مو وقت هذا الإجراء!", show_alert=True)
 
