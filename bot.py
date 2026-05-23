@@ -29,7 +29,6 @@ def assign_roles(players):
     n = len(ids)
     roles = ["مواطن"] * n
     
-    # تحديد عدد المافيا بناءً على التحديث الجديد (13 لاعب وأكثر = 3 مافيا)
     if n >= 13:
         roles[0] = "مافيا"
         roles[1] = "مافيا"
@@ -166,7 +165,8 @@ async def start_mafia_phase(chat_id, context):
     targets = {uid: p for uid, p in alive.items() if p["role"] != "مافيا"}
     
     if mafia_uids and targets:
-        await context.bot.send_message(chat_id, "🌑 *حلّ الظلام على المدينة...*\n\n🔫 همسات المافيا تتردد في الأزقة وهم يتآمرون لاختيار ضحيتهم... (المهلة: 3 دقائق)", parse_mode="Markdown")
+        # تم حذف جملة المهلة من هنا بناءً على طلبكِ
+        await context.bot.send_message(chat_id, "🌑 *حلّ الظلام على المدينة...*\n\n🔫 همسات المافيا تتردد في الأزقة وهم يتآمرون لاختيار ضحيتهم...", parse_mode="Markdown")
         kb = [[InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"mafia_{uid}")] for uid, p in targets.items()]
         for uid in mafia_uids:
             try: await context.bot.send_message(uid, "🔫 *اختر من تغتال الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -201,7 +201,8 @@ async def start_doctor_phase(chat_id, context):
     
     if has_doctor_in_game:
         game["night_step"] = "doctor"
-        await context.bot.send_message(chat_id, "💊 *الدكتور استيقظ على صوت خطوات مريبة...*\n\nيسارع ليقرر من يحميه بدوائه قبل فوات الأوان... (المهلة: 3 دقائق)", parse_mode="Markdown")
+        # تم حذف جملة المهلة من هنا بناءً على طلبكِ
+        await context.bot.send_message(chat_id, "💊 *الدكتور استيقظ على صوت خطوات مريبة...*\n\nيسارع ليقرر من يحميه بدوائه قبل فوات الأوان...", parse_mode="Markdown")
         
         if doctor_uids:
             kb = [[InlineKeyboardButton(f"💊 {p['name']}", callback_data=f"heal_{uid}")] for uid, p in alive.items()]
@@ -251,7 +252,8 @@ async def start_detective_phase(chat_id, context):
     
     if has_detective_in_game:
         game["night_step"] = "detective"
-        await context.bot.send_message(chat_id, "🔍 *المحقق يتسلل في ظلام الليل...*\n\nعيناه تراقبان كل تفصيلة وهو يستعد للكشف عن أحد المشتبه بهم... (المهلة: 3 دقائق)", parse_mode="Markdown")
+        # تم حذف جملة المهلة من هنا بناءً على طلبكِ
+        await context.bot.send_message(chat_id, "🔍 *المحقق يتسلل في ظلام الليل...*\n\nعيناه تراقبان كل تفصيلة وهو يستعد للكشف عن أحد المشتبه بهم...", parse_mode="Markdown")
         
         if detect_uids and det_targets:
             kb = [[InlineKeyboardButton(f"🔍 {p['name']}", callback_data=f"invest_{uid}")] for uid, p in det_targets.items()]
