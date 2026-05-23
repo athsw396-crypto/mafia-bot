@@ -369,14 +369,14 @@ async def resolve_night(chat_id, ctx):
         await end_game(chat_id, ctx, winner)
         return
 
-    game["phase"] = "day"
+        game["phase"] = "day"
     alive = get_alive(game)
     alive_list = "\n".join(f"• {p['name']}" for p in alive.values())
     kb = [[InlineKeyboardButton(f"🗳️ {p['name']}", callback_data=f"vote_{uid}")] for uid, p in alive.items()]
     kb.append([InlineKeyboardButton("⏭️ تخطي التصويت", callback_data="skip_vote")])
     game["votes"] = {}
     await ctx.bot.send_message(chat_id,
-        f"{msg}\n\n👥 *اللاعبون الأحياء:*\n{alive_list}\n\n☀️ *بدأ النقاش!* من تظنه المافيا Bars؟",
+        f"{msg}\n\n👥 *اللاعبون الأحياء:*\n{alive_list}\n\n☀️ *بدأ النقاش!* من تظنه المافيا؟",
         reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
     )
 
