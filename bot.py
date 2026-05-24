@@ -29,6 +29,7 @@ def assign_roles(players):
     n = len(ids)
     roles = ["مواطن"] * n
     
+    # (2 مافيا إذا كان العدد من 6 إلى 12 شخص)
     if n >= 13:
         roles[0] = "مافيا"
         roles[1] = "مافيا"
@@ -194,7 +195,7 @@ async def start_mafia_phase(chat_id, context):
 
 async def mafia_timeout(chat_id, context, targets, mafia_uids):
     try:
-        await asyncio.sleep(180) # 3 دقائق للمافيا كما هي
+        await asyncio.sleep(180) # 3 دقائق للمافيا
         if chat_id in games and games[chat_id]["night_step"] == "mafia":
             if targets:
                 games[chat_id]["mafia_target"] = random.choice(list(targets.keys()))
@@ -212,7 +213,8 @@ async def start_doctor_phase(chat_id, context):
     if chat_id not in games: return
     game = games[chat_id]
     
-    if game["timeout_task"] and not game["timeout_task"].done(): 
+    # تحصين الـ Task: منع إلغاء المهمة الحالية إذا كانت هي التي تستدعي المرحلة التالية
+    if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
         await asyncio.sleep(0.1)
     
@@ -238,7 +240,7 @@ async def start_doctor_phase(chat_id, context):
 
 async def doctor_timeout(chat_id, context, alive, doctor_uids):
     try:
-        await asyncio.sleep(90) # دقيقة ونصف (90 ثانية) للدكتور
+        await asyncio.sleep(90) # دقيقة ونصف للدكتور
         if chat_id in games and games[chat_id]["night_step"] == "doctor":
             if alive:
                 games[chat_id]["healed"] = random.choice(list(alive.keys()))
@@ -269,7 +271,7 @@ async def start_detective_phase(chat_id, context):
     if chat_id not in games: return
     game = games[chat_id]
     
-    if game["timeout_task"] and not game["timeout_task"].done(): 
+    if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
         await asyncio.sleep(0.1)
     
@@ -296,7 +298,7 @@ async def start_detective_phase(chat_id, context):
 
 async def detective_timeout(chat_id, context, det_targets, detect_uids):
     try:
-        await asyncio.sleep(90) # دقيقة ونصف (90 ثانية) للمحقق
+        await asyncio.sleep(90) # دقيقة ونصف للمحقق
         if chat_id in games and games[chat_id]["night_step"] == "detective":
             t_rand = None
             if det_targets:
@@ -334,8 +336,12 @@ async def fake_detective_timeout(chat_id, context, alive):
 async def end_night_phase(chat_id, context):
     if chat_id not in games: return
     game = games[chat_id]
-    if game["timeout_task"] and not game["timeout_task"].done(): 
+    
+    # منع التدمير الذاتي للـ Task (حل الثغرة القاتلة التي سببت التعليق!)
+    if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
+        await asyncio.sleep(0.1)
+        
     game["night_step"] = None
     await resolve_night(chat_id, context)
 
@@ -424,12 +430,13 @@ async def resolve_night(chat_id, context):
     healed_id  = game["healed"]
 
     if target_id:
+        # 🔥 تم إرجاع الخدعة النفسية كـ "مواطن" أو "مافيا" فقط لعدم كشف الطبيب والمحقق للمافيا
+        role = game["players"][target_id]["role"]
+        label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤"
         if target_id == healed_id:
             msg = f"🌅 *أشرقت شمس الصباح*\n\n✨ الدكتور أنقذ *{game['players'][target_id]['name']}* في اللحظة الأخيرة!\nلم يمت أحد الليلة! 🎉"
         else:
             game["players"][target_id]["alive"] = False
-            role = game["players"][target_id]["role"]
-            label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤"
             msg = f"🌅 *أشرقت شمس الصباح*\n\n⚰️ اغتيل *{game['players'][target_id]['name']}* الليلة... وكان {label}"
     else:
         msg = "🌅 *أشرقت شمس الصباح*\n\nمرّت ليلة هادئة، لم يحدث شيء!"
@@ -534,6 +541,7 @@ async def resolve_vote(chat_id, context, skipped=False):
     game["players"][executed]["alive"] = False
     name  = game["players"][executed]["name"]
     role  = game["players"][executed]["role"]
+    # 🔥 تم إرجاع خدعة النهار أيضاً كـ "مواطن" أو "مافيا" فقط لعدم كشف الأدوار
     label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤"
     msg   = f"🗳️ *نتيجة التصويت:*\n\n⚰️ اغتيل *{name}* بـ {max_v} أصوات... وكان {label}"
 
