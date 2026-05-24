@@ -29,7 +29,7 @@ def assign_roles(players):
     n = len(ids)
     roles = ["مواطن"] * n
     
-    # التعديل الجديد والمضمون: (2 مافيا إذا كان العدد من 6 إلى 12 شخص)
+    # (2 مافيا إذا كان العدد من 6 إلى 12 شخص)
     if n >= 13:
         roles[0] = "مافيا"
         roles[1] = "مافيا"
@@ -279,7 +279,8 @@ async def start_detective_phase(chat_id, context):
 async def detective_timeout(chat_id, context, det_targets, detect_uids):
     try:
         await asyncio.sleep(180)
-        if chat_id in games && games[chat_id]["night_step"] == "detective":
+        # ✅ تم تصحيح الخطأ هنا وتغيير العلامة إلى and البايثونية
+        if chat_id in games and games[chat_id]["night_step"] == "detective":
             if det_targets:
                 games[chat_id]["investigated"] = random.choice(list(det_targets.keys()))
             for uid in detect_uids:
