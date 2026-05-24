@@ -153,7 +153,7 @@ async def begin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(2)
     await start_mafia_phase(chat_id, context)
 
-# ── متحكمات الليل بالأحداث الفورية ──────────────────────────────────────────
+# ── متحكمات الليل بالأحداث الفورية المصححة ──────────────────────────────────────────
 
 async def start_mafia_phase(chat_id, context):
     if chat_id not in games: return
@@ -165,13 +165,13 @@ async def start_mafia_phase(chat_id, context):
     targets = {uid: p for uid, p in alive.items() if p["role"] != "مافيا"}
     
     if mafia_uids and targets:
-        # تم حذف جملة المهلة من هنا بناءً على طلبكِ
         await context.bot.send_message(chat_id, "🌑 *حلّ الظلام على المدينة...*\n\n🔫 همسات المافيا تتردد في الأزقة وهم يتآمرون لاختيار ضحيتهم...", parse_mode="Markdown")
         kb = [[InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"mafia_{uid}")] for uid, p in targets.items()]
         for uid in mafia_uids:
             try: await context.bot.send_message(uid, "🔫 *اختر من تغتال الليلة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
             except Exception: pass
         
+        # تصحيح تمرير كائن context هنا لضمان عمل الـ timeout
         game["timeout_task"] = asyncio.create_task(mafia_timeout(chat_id, context, targets, mafia_uids))
     else:
         asyncio.create_task(start_doctor_phase(chat_id, context))
@@ -201,7 +201,6 @@ async def start_doctor_phase(chat_id, context):
     
     if has_doctor_in_game:
         game["night_step"] = "doctor"
-        # تم حذف جملة المهلة من هنا بناءً على طلبكِ
         await context.bot.send_message(chat_id, "💊 *الدكتور استيقظ على صوت خطوات مريبة...*\n\nيسارع ليقرر من يحميه بدوائه قبل فوات الأوان...", parse_mode="Markdown")
         
         if doctor_uids:
@@ -252,7 +251,6 @@ async def start_detective_phase(chat_id, context):
     
     if has_detective_in_game:
         game["night_step"] = "detective"
-        # تم حذف جملة المهلة من هنا بناءً على طلبكِ
         await context.bot.send_message(chat_id, "🔍 *المحقق يتسلل في ظلام الليل...*\n\nعيناه تراقبان كل تفصيلة وهو يستعد للكشف عن أحد المشتبه بهم...", parse_mode="Markdown")
         
         if detect_uids and det_targets:
