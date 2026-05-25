@@ -41,7 +41,7 @@ def assign_roles(players):
         roles[0] = "مافيا"  # للأعداد الصغيرة (4 و 5 لاعبين فقط)
         
     if n >= 4: roles[-1] = "دكتور"
-    if n >= 6: roles[-2] = "محقق"  # المحقق يظهر فقط من 6 لاعبين وأكثر
+    if n >= 6: roles[-2] = "محقق"
     
     random.shuffle(roles)
     for i, uid in enumerate(ids):
@@ -55,7 +55,7 @@ def check_winner(game):
     alive = get_alive(game)
     mafia = [p for p in alive.values() if p["role"] == "مافيا"]
     others = [p for p in alive.values() if p["role"] != "مافيا"]
-    if not mafia: return "مواطنون" # شرط فوز المواطنين عند موت المافيا كلياً
+    if not mafia: return "مواطنون"
     if len(mafia) >= len(others): return "مافيا"
     return None
 
@@ -131,7 +131,7 @@ async def leave_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n".join(f"• {n}" for n in names) +
         "\n\nاكتب /begin لبدء اللعبة (4 لاعبين على الأقل)"
     ) if names else "🎭 *لعبة المافيا*\n\nما في لاعبين. اضغط انضم للمشاركة!"
-    await query.edit_message_text(text, reply_markup=joining_keyboard(), parse_mode="Markdown")
+    await update.message.reply_text(text, reply_markup=joining_keyboard(), parse_mode="Markdown")
     await query.answer("خرجت من اللعبة 👋")
 
 async def begin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -164,7 +164,7 @@ async def begin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(2)
     await start_mafia_phase(chat_id, context)
 
-# ── متحكمات الليل المعدلة والمحمية بالكامل ──────────────────────────────────
+# ── متحكمات الليل المحصنة ──────────────────────────────────
 
 async def start_mafia_phase(chat_id, context):
     if chat_id not in games: return
@@ -216,7 +216,6 @@ async def start_doctor_phase(chat_id, context):
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
     
-    # فحص ذكي: هل دور الدكتور موجود أصلاً في اللعبة من البداية؟
     has_doctor_in_game = any(p["role"] == "دكتور" for p in game["players"].values())
     if not has_doctor_in_game:
         game["healed"] = None
@@ -236,7 +235,6 @@ async def start_doctor_phase(chat_id, context):
             except Exception: pass
         game["timeout_task"] = asyncio.create_task(doctor_timeout(chat_id, context, alive, doctor_uids))
     else:
-        # الدكتور كان موجود ومات ➔ تمويه صامت 20 ثانية بالجروب
         game["night_step"] = "doctor_fake"
         game["healed"] = None
         game["timeout_task"] = asyncio.create_task(fake_doctor_timeout(chat_id, context))
@@ -275,7 +273,6 @@ async def start_detective_phase(chat_id, context):
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
     
-    # فحص ذكي: هل دور المحقق موجود أصلاً في الجيم؟ (من 6 لاعبين وأكثر)
     has_detective_in_game = any(p["role"] == "محقق" for p in game["players"].values())
     if not has_detective_in_game:
         game["investigated"] = None
@@ -296,7 +293,6 @@ async def start_detective_phase(chat_id, context):
             except Exception: pass
         game["timeout_task"] = asyncio.create_task(detective_timeout(chat_id, context, det_targets, detect_uids))
     else:
-        # المحقق كان موجود ومات ➔ تمويه صامت 20 ثانية بالجروب
         game["night_step"] = "detective_fake"
         game["investigated"] = None
         game["timeout_task"] = asyncio.create_task(fake_detective_timeout(chat_id, context))
@@ -344,7 +340,7 @@ async def end_night_phase(chat_id, context):
     game["night_step"] = None
     await resolve_night(chat_id, context)
 
-# ── callback معالجة الأزرار السرية ليلًا ──────────────────
+# ── callback الليل ──────────────────
 
 async def night_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -384,7 +380,6 @@ async def night_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         alive = get_alive(game)
         mafia_uids = [u for u, p in alive.items() if p["role"] == "مافيا"]
         
-        # لو المافيا الحية المتبقية صوتت، ينتقل فوراً بدون انتظار وحرق وقت
         if len(game["mafia_votes"]) >= len(mafia_uids):
             if game["timeout_task"] and not game["timeout_task"].done():
                 game["timeout_task"].cancel()
@@ -429,7 +424,7 @@ async def night_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("مو وقت هذا الإجراء!", show_alert=True)
 
-# ── نهاية الليل والتمويه الصباحي ─────────────────────────────────────
+# ── نهاية الليل والشروق ─────────────────────────────────────
 
 async def resolve_night(chat_id, context):
     if chat_id not in games: return
@@ -439,7 +434,7 @@ async def resolve_night(chat_id, context):
 
     if target_id:
         role = game["players"][target_id]["role"]
-        label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤" # تمويه الأدوار بالنهار كما تحبين لخدعة المافيا
+        label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤" 
         if target_id == healed_id:
             msg = f"🌅 *أشرقت شمس الصباح*\n\n✨ الدكتور أنقذ *{game['players'][target_id]['name']}* في اللحظة الأخيرة!\nلم يمت أحد الليلة! 🎉"
         else:
@@ -452,7 +447,6 @@ async def resolve_night(chat_id, context):
     game["healed"] = None
     game["investigated"] = None
 
-    # فحص الفوز بعد أحداث الليل مباشرة
     winner = check_winner(game)
     if winner:
         await context.bot.send_message(chat_id, msg, parse_mode="Markdown")
@@ -472,7 +466,7 @@ async def resolve_night(chat_id, context):
         reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
     )
 
-# ── التصويت ─────────────────────────────────────────
+# ── التصويت الصباحي (تم تعديل السكيب ليكون خياراً ديمقراطياً) ────────────────
 
 async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query   = update.callback_query
@@ -485,12 +479,6 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     game = games[chat_id]
 
-    if query.data == "skip_vote":
-        await query.answer("تم تخطي التصويت!")
-        await query.edit_message_reply_markup(reply_markup=None)
-        await resolve_vote(chat_id, context, skipped=True)
-        return
-
     if game["phase"] != "day":
         await query.answer("مو وقت التصويت!", show_alert=True)
         return
@@ -501,29 +489,36 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("أنت خارج اللعبة!", show_alert=True)
         return
 
-    try: target_id = int(query.data.split("_")[1])
-    except Exception: return
-
-    if not game["players"].get(target_id, {}).get("alive"):
-        await query.answer("هذا لاعب خارج اللعبة!", show_alert=True)
-        return
-
     already = uid in game["votes"]
-    game["votes"][uid] = target_id
-    name = game["players"][target_id]['name']
-    await query.answer(f"{'✅ غيّرت صوتك إلى' if already else '✅ صوّتت على'} {name}")
+
+    # 🌟 إذا ضغطت البنت على زر التخطي، يتم احتسابه كصوت خياري وليس كهروب فوري
+    if query.data == "skip_vote":
+        game["votes"][uid] = "skip"
+        await query.answer(f"{'✅ غيّرت صوتك إلى' if already else '✅ صوّتت على'} تخطي التصويت")
+    else:
+        try: target_id = int(query.data.split("_")[1])
+        except Exception: return
+
+        if not game["players"].get(target_id, {}).get("alive"):
+            await query.answer("هذا لاعب خارج اللعبة!", show_alert=True)
+            return
+
+        game["votes"][uid] = target_id
+        name = game["players"][target_id]['name']
+        await query.answer(f"{'✅ غيّرت صوتك إلى' if already else '✅ صوّتت على'} {name}")
 
     alive = get_alive(game)
+    # ينتظر بدقة حتى ينتهي الكل من التصويت (بما فيهم المصوتين للتخطي)
     if len(game["votes"]) >= len(alive):
         try: await query.edit_message_reply_markup(reply_markup=None)
         except Exception: pass
         await resolve_vote(chat_id, context)
 
-async def resolve_vote(chat_id, context, skipped=False):
+async def resolve_vote(chat_id, context):
     if chat_id not in games: return
     game = games[chat_id]
 
-    if skipped or not game["votes"]:
+    if not game["votes"]:
         game["phase"] = "night"
         game["day"] += 1
         await context.bot.send_message(chat_id, "⏭️ *لم يتفق أهل المدينة!*\n\nلم يُعدم أحد.\n\n🌙 يحل الليل...", parse_mode="Markdown")
@@ -536,23 +531,39 @@ async def resolve_vote(chat_id, context, skipped=False):
     max_v = max(vc.values())
     candidates = [uid for uid, v in vc.items() if v == max_v]
 
+    # معالجة التعادل (سواء بين اللاعبين أو التخطي)
     if len(candidates) > 1:
         game["phase"] = "night"
         game["day"] += 1
-        names = [game["players"][u]["name"] for u in candidates]
-        await context.bot.send_message(chat_id, f"⚖️ *تعادل!*\n\nتعادل بين: {', '.join(names)}\nلم يُعدم أحد!\n\n🌙 يحل الليل...", parse_mode="Markdown")
+        names = []
+        for u in candidates:
+            if u == "skip": names.append("تخطي التصويت")
+            else: names.append(game["players"][u]["name"])
+            
+        await context.bot.send_message(chat_id, f"⚖️ *تعادل الأصوات!*\n\nتعادل بين: {', '.join(names)}\nلم يُعدم أحد!\n\n🌙 يحل الليل...", parse_mode="Markdown")
         await asyncio.sleep(2)
         await start_mafia_phase(chat_id, context)
         return
 
-    executed = candidates[0]
+    winner_option = candidates[0]
+
+    # 🌟 إذا فاز خيار التخطي بأعلى الأصوات
+    if winner_option == "skip":
+        game["phase"] = "night"
+        game["day"] += 1
+        await context.bot.send_message(chat_id, "⏭️ *أغلبية الأصوات اختارت تخطي التصويت!*\n\nلم يُعدم أحد الليا.\n\n🌙 يحل الليل...", parse_mode="Markdown")
+        await asyncio.sleep(2)
+        await start_mafia_phase(chat_id, context)
+        return
+
+    # إذا فاز تصويت إعدام لاعب حقيقي
+    executed = winner_option
     game["players"][executed]["alive"] = False
     name  = game["players"][executed]["name"]
     role  = game["players"][executed]["role"]
-    label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤" # تمويه النهار للأدوار الميتة
+    label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤"
     msg   = f"🗳️ *نتيجة التصويت:*\n\n⚰️ اغتيل *{name}* بـ {max_v} أصوات... وكان {label}"
 
-    # 🔥 الفحص الصارم عند إعدام المافيا بالنهار لإنهاء الجيم مباشرة بفوز المواطنين
     winner = check_winner(game)
     if winner:
         await context.bot.send_message(chat_id, msg, parse_mode="Markdown")
@@ -567,7 +578,6 @@ async def resolve_vote(chat_id, context, skipped=False):
 
 async def end_game(chat_id, context, winner):
     game = games[chat_id]
-    
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
         
