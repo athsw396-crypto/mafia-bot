@@ -41,7 +41,7 @@ def assign_roles(players):
         roles[0] = "مافيا"  # للأعداد الصغيرة (4 و 5 لاعبين فقط)
         
     if n >= 4: roles[-1] = "دكتور"
-    if n >= 6: roles[-2] = "محقق"
+    if n >= 6: roles[-2] = "محقق"  # المحقق يظهر فقط من 6 لاعبين وأكثر
     
     random.shuffle(roles)
     for i, uid in enumerate(ids):
@@ -55,7 +55,7 @@ def check_winner(game):
     alive = get_alive(game)
     mafia = [p for p in alive.values() if p["role"] == "مافيا"]
     others = [p for p in alive.values() if p["role"] != "مافيا"]
-    if not mafia: return "مواطنون"
+    if not mafia: return "مواطنون" # شرط فوز المواطنين عند موت المافيا كلياً
     if len(mafia) >= len(others): return "مافيا"
     return None
 
@@ -164,7 +164,7 @@ async def begin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(2)
     await start_mafia_phase(chat_id, context)
 
-# ── متحكمات الليل بنظام التمويه الصارم لـ 20 ثانية ──────────────────────────────────
+# ── متحكمات الليل المعدلة والمحمية بالكامل ──────────────────────────────────
 
 async def start_mafia_phase(chat_id, context):
     if chat_id not in games: return
@@ -216,7 +216,13 @@ async def start_doctor_phase(chat_id, context):
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
     
-    # 🔥 تمويه صارم: الرسالة تنرسل في الجروب العام بكل الأحوال!
+    # فحص ذكي: هل دور الدكتور موجود أصلاً في اللعبة من البداية؟
+    has_doctor_in_game = any(p["role"] == "دكتور" for p in game["players"].values())
+    if not has_doctor_in_game:
+        game["healed"] = None
+        await start_detective_phase(chat_id, context)
+        return
+
     await context.bot.send_message(chat_id, "💊 *الدكتور استيقظ على صوت خطوات مريبة...*\n\nيسارع ليقرر من يحميه بدوائه قبل فوات الأوان...", parse_mode="Markdown")
     
     alive = get_alive(game)
@@ -230,7 +236,7 @@ async def start_doctor_phase(chat_id, context):
             except Exception: pass
         game["timeout_task"] = asyncio.create_task(doctor_timeout(chat_id, context, alive, doctor_uids))
     else:
-        # 🌟 التعديل المطلوب: الدكتور ميت، يحرق 20 ثانية بالظبط كتمثيل بالجروب العام ثم يكمل!
+        # الدكتور كان موجود ومات ➔ تمويه صامت 20 ثانية بالجروب
         game["night_step"] = "doctor_fake"
         game["healed"] = None
         game["timeout_task"] = asyncio.create_task(fake_doctor_timeout(chat_id, context))
@@ -253,7 +259,7 @@ async def doctor_timeout(chat_id, context, alive, doctor_uids):
 
 async def fake_doctor_timeout(chat_id, context):
     try:
-        await asyncio.sleep(20) # 20 ثانية بالظبط تمويه صامت بالجروب
+        await asyncio.sleep(20)
         if chat_id in games and games[chat_id]["night_step"] == "doctor_fake":
             await start_detective_phase(chat_id, context)
     except asyncio.CancelledError:
@@ -269,7 +275,13 @@ async def start_detective_phase(chat_id, context):
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
     
-    # 🔥 تمويه صارم: الرسالة تنرسل في الجروب العام بكل الأحوال!
+    # فحص ذكي: هل دور المحقق موجود أصلاً في الجيم؟ (من 6 لاعبين وأكثر)
+    has_detective_in_game = any(p["role"] == "محقق" for p in game["players"].values())
+    if not has_detective_in_game:
+        game["investigated"] = None
+        await end_night_phase(chat_id, context)
+        return
+
     await context.bot.send_message(chat_id, "🔍 *المحقق يتسلل في ظلام الليل...*\n\nعيناه تراقبان كل تفصيلة وهو يستعد للكشف عن أحد المشتبه بهم...", parse_mode="Markdown")
     
     alive = get_alive(game)
@@ -284,7 +296,7 @@ async def start_detective_phase(chat_id, context):
             except Exception: pass
         game["timeout_task"] = asyncio.create_task(detective_timeout(chat_id, context, det_targets, detect_uids))
     else:
-        # 🌟 التعديل المطلوب: المحقق ميت، يحرق 20 ثانية بالظبط كتمثيل بالجروب العام ثم يكمل!
+        # المحقق كان موجود ومات ➔ تمويه صامت 20 ثانية بالجروب
         game["night_step"] = "detective_fake"
         game["investigated"] = None
         game["timeout_task"] = asyncio.create_task(fake_detective_timeout(chat_id, context))
@@ -313,7 +325,7 @@ async def detective_timeout(chat_id, context, det_targets, detect_uids):
 
 async def fake_detective_timeout(chat_id, context):
     try:
-        await asyncio.sleep(20) # 20 ثانية بالظبط تمويه صامت بالجروب
+        await asyncio.sleep(20)
         if chat_id in games and games[chat_id]["night_step"] == "detective_fake":
             await end_night_phase(chat_id, context)
     except asyncio.CancelledError:
@@ -332,7 +344,7 @@ async def end_night_phase(chat_id, context):
     game["night_step"] = None
     await resolve_night(chat_id, context)
 
-# ── callback معالجة ضغطات الأزرار السرية والتزامنية الحالية ──────────────────
+# ── callback معالجة الأزرار السرية ليلًا ──────────────────
 
 async def night_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -372,7 +384,7 @@ async def night_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         alive = get_alive(game)
         mafia_uids = [u for u, p in alive.items() if p["role"] == "مافيا"]
         
-        # 🌟 الحماية من حرق الوقت: لو بقى لاعب مافيا واحد حي، بمجرد ما يضغط صوته بيمشي فوراً!
+        # لو المافيا الحية المتبقية صوتت، ينتقل فوراً بدون انتظار وحرق وقت
         if len(game["mafia_votes"]) >= len(mafia_uids):
             if game["timeout_task"] and not game["timeout_task"].done():
                 game["timeout_task"].cancel()
@@ -427,8 +439,7 @@ async def resolve_night(chat_id, context):
 
     if target_id:
         role = game["players"][target_id]["role"]
-        # الخدعة النفسية بالنهار: تعلن دائماً كـ "مواطن 👤" حتى لو الميت دكتور أو محقق!
-        label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤" 
+        label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤" # تمويه الأدوار بالنهار كما تحبين لخدعة المافيا
         if target_id == healed_id:
             msg = f"🌅 *أشرقت شمس الصباح*\n\n✨ الدكتور أنقذ *{game['players'][target_id]['name']}* في اللحظة الأخيرة!\nلم يمت أحد الليلة! 🎉"
         else:
@@ -441,6 +452,7 @@ async def resolve_night(chat_id, context):
     game["healed"] = None
     game["investigated"] = None
 
+    # فحص الفوز بعد أحداث الليل مباشرة
     winner = check_winner(game)
     if winner:
         await context.bot.send_message(chat_id, msg, parse_mode="Markdown")
@@ -537,10 +549,10 @@ async def resolve_vote(chat_id, context, skipped=False):
     game["players"][executed]["alive"] = False
     name  = game["players"][executed]["name"]
     role  = game["players"][executed]["role"]
-    # الخدعة النهارية: تعلن دائماً كـ "مواطن 👤" حتى لو المطرود دكتور أو محقق!
-    label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤"
+    label = "مافيا 🔫" if role == "مافيا" else "مواطن 👤" # تمويه النهار للأدوار الميتة
     msg   = f"🗳️ *نتيجة التصويت:*\n\n⚰️ اغتيل *{name}* بـ {max_v} أصوات... وكان {label}"
 
+    # 🔥 الفحص الصارم عند إعدام المافيا بالنهار لإنهاء الجيم مباشرة بفوز المواطنين
     winner = check_winner(game)
     if winner:
         await context.bot.send_message(chat_id, msg, parse_mode="Markdown")
@@ -555,8 +567,10 @@ async def resolve_vote(chat_id, context, skipped=False):
 
 async def end_game(chat_id, context, winner):
     game = games[chat_id]
-    if game["timeout_task"] and not game["timeout_task"].done(): 
+    
+    if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
+        
     reveal = "\n".join(f"{'💀' if not p['alive'] else '✅'} {p['name']}: {ROLES.get(p['role'],'')} {p['role']}" for p in game["players"].values())
     msg = f"🎉 *انتهت اللعبة!*\n\n{'🏆 فاز المواطنون! قضوا على المافيا!' if winner == 'مواطنون' else '🔫 فازت المافيا! سيطروا على المدينة!'}\n\n📋 *الأدوار:*\n{reveal}"
     await context.bot.send_message(chat_id, msg, parse_mode="Markdown")
@@ -575,7 +589,7 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("ما في لعبة نشطة الحين!")
         return
     game = games[chat_id]
-    if game["timeout_task"] and not game["timeout_task"].done(): 
+    if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
     del games[chat_id]
     await update.message.reply_text("🛑 *تم إيقاف اللعبة!*\n\nيمكنكم بدء لعبة جديدة بكتابة /newgame", parse_mode="Markdown")
