@@ -101,7 +101,11 @@ async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id in game["players"]:
         await query.answer("أنت مسجل بالفعل! ✅", show_alert=True)
         return
-    game["players"][user.id] = {"name": user.first_name, "role": None, "alive": True}
+        
+    # تنظيف اسم المستخدم من الرموز التي تكسر الماركدون
+    safe_name = user.first_name.replace("_", "-").replace("*", "").replace("`", "").replace("[", "")
+    game["players"][user.id] = {"name": safe_name, "role": None, "alive": True}
+    
     names = [p["name"] for p in game["players"].values()]
     
     await query.edit_message_text(
@@ -130,7 +134,9 @@ async def leave_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n".join(f"• {n}" for n in names) +
         "\n\nاكتب /begin لبدء اللعبة (4 لاعبين على الأقل)"
     ) if names else "🎭 *لعبة المافيا*\n\nلا يوجد لاعبون. اضغط انضم للمشاركة!"
-    await update.message.reply_text(text, reply_markup=joining_keyboard(), parse_mode="Markdown")
+    
+    # تعديل طريقة إرسال الرسالة لتفادي الخطأ السابق
+    await query.edit_message_text(text, reply_markup=joining_keyboard(), parse_mode="Markdown")
     await query.answer("خرجت من اللعبة 👋")
 
 async def begin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
