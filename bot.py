@@ -690,9 +690,26 @@ def main():
     
     app.add_handler(CallbackQueryHandler(night_callback,  pattern="^(mafia|heal|invest)_.*"))
     app.add_handler(CallbackQueryHandler(vote_callback,   pattern="^(vote_.*|skip_vote)"))
-    
-    print("✅ البوت يعمل بكفاءة وبدون ثغرات...")
-    app.run_polling()
+
+    # ── إعدادات الـ Webhook ──────────────────────────────────
+    # PORT: يوفرها Render تلقائياً في متغير البيئة PORT
+    # WEBHOOK_URL: رابط خدمتك على Render (مثال: https://your-app.onrender.com)
+    #              بدون علامة / في النهاية
+    port = int(os.environ.get("PORT", "8080"))
+    webhook_url = os.environ.get("WEBHOOK_URL", "").rstrip("/")
+
+    if not webhook_url:
+        print("⚠️ لم يتم تحديد WEBHOOK_URL، سيتم التشغيل بوضع polling للتجربة المحلية فقط.")
+        app.run_polling()
+        return
+
+    print(f"✅ البوت يعمل بوضع webhook على المنفذ {port}...")
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=TOKEN,                       # مسار سري يحتوي التوكن
+        webhook_url=f"{webhook_url}/{TOKEN}",  # الرابط الكامل الذي يرسله تيليجرام
+    )
 
 if __name__ == "__main__":
     main()
