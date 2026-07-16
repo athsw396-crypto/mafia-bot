@@ -20,7 +20,8 @@ def new_game():
         "mafia_target": None,
         "mafia_votes": {},
         "night_step": None,  
-        "timeout_task": None 
+        "timeout_task": None,
+        "pinned_msg_id": None  # المتغير الجديد لحفظ رقم الرسالة المثبتة
     }
 
 def assign_roles(players):
@@ -85,10 +86,19 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     games[chat_id] = new_game()
-    await update.message.reply_text(
+    
+    # نرسل رسالة التسجيل ونحفظها في متغير
+    sent_msg = await update.message.reply_text(
         "🎭 *لعبة المافيا*\n\nاضغط انضم للمشاركة!\nالحد الأدنى: 4 لاعبين\n\nعندما يكتمل اللاعبون اكتب /begin",
         reply_markup=joining_keyboard(), parse_mode="Markdown"
     )
+    
+    # محاولة تثبيت رسالة التسجيل
+    try:
+        await context.bot.pin_chat_message(chat_id, sent_msg.message_id)
+        games[chat_id]["pinned_msg_id"] = sent_msg.message_id
+    except Exception:
+        pass # نتجاهل الخطأ لو البوت مو أدمن
 
 async def newgame_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await start_cmd(update, context)
@@ -107,7 +117,6 @@ async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("أنت مسجل بالفعل! ✅", show_alert=True)
         return
         
-    # تنظيف اسم المستخدم من الرموز التي تكسر الماركدون
     safe_name = user.first_name.replace("_", "-").replace("*", "").replace("`", "").replace("[", "")
     game["players"][user.id] = {"name": safe_name, "role": None, "alive": True}
     
@@ -143,7 +152,6 @@ async def leave_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n\nاكتب /begin لبدء اللعبة (4 لاعبين على الأقل)"
     ) if names else "🎭 *لعبة المافيا*\n\nلا يوجد لاعبون. اضغط انضم للمشاركة!"
     
-    # استخدام edit_message_text لتفادي خطأ NoneType
     await query.edit_message_text(text, reply_markup=joining_keyboard(), parse_mode="Markdown")
     await query.answer("خرجت من اللعبة 👋")
 
@@ -172,6 +180,14 @@ async def begin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 extra = f"\n\n🔫 زملاؤك في المافيا: {', '.join(mafia_names)}"
             desc = {"مافيا": "أنت من المافيا، اقتل المواطنين ليلاً!", "مواطن": "أنت مواطن شريف، اكشف المافيا!", "دكتور": "أنت الدكتور، اشفِ لاعباً كل ليلة!", "محقق": "أنت المحقق، تحقق من هوية لاعب كل ليلة!"}.get(role, "")
             await context.bot.send_message(uid, f"🎭 دورك:\n\n{ROLES.get(role,'')} *{role}*{extra}\n\n{desc}", parse_mode="Markdown")
+        except Exception:
+            pass
+            
+    # فك تثبيت رسالة التسجيل عند بدء اللعبة
+    if game.get("pinned_msg_id"):
+        try:
+            await context.bot.unpin_chat_message(chat_id, game["pinned_msg_id"])
+            game["pinned_msg_id"] = None
         except Exception:
             pass
             
@@ -468,7 +484,7 @@ async def night_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("ليس وقت هذا الإجراء حالياً!", show_alert=True)
 
-# ── نهاية الليل والشروق بمؤقت النهار (5 دقائق والتذكيرات الفصحى) ──────────────────
+# ── نهاية الليل والشروق بمؤقت النهار ──────────────────
 
 async def resolve_night(chat_id, context):
     if chat_id not in games: return
@@ -505,10 +521,18 @@ async def resolve_night(chat_id, context):
     kb = [[InlineKeyboardButton(f"🗳️ {p['name']}", callback_data=f"vote_{uid}")] for uid, p in alive.items()]
     kb.append([InlineKeyboardButton("⏭️ تخطي التصويت", callback_data="skip_vote")])
     
-    await context.bot.send_message(chat_id,
+    # نرسل رسالة التصويت ونحفظها لتثبيتها
+    sent_msg = await context.bot.send_message(chat_id,
         f"{msg}\n\n👥 *اللاعبون الأحياء:*\n{alive_list}\n\n☀️ *بدأ النقاش والتصويت! (المهلة: 5 دقائق) ⏱️*\nمن تظنونه المافيا؟",
         reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
     )
+    
+    # محاولة تثبيت رسالة التصويت
+    try:
+        await context.bot.pin_chat_message(chat_id, sent_msg.message_id)
+        game["pinned_msg_id"] = sent_msg.message_id
+    except Exception:
+        pass
     
     game["timeout_task"] = asyncio.create_task(day_timeout(chat_id, context))
 
@@ -588,9 +612,16 @@ async def resolve_vote(chat_id, context):
     if chat_id not in games: return
     game = games[chat_id]
 
-    # 🌟 القفل الذهبي الأهم: يمنع تكرار إعلان النتيجة والتعليق لو الوقت خلص مع تصويت آخر شخص بنفس الجزء من الثانية
     if game["phase"] != "day": return 
     game["phase"] = "resolving_day" 
+
+    # فك تثبيت رسالة التصويت بمجرد انتهاء النهار
+    if game.get("pinned_msg_id"):
+        try:
+            await context.bot.unpin_chat_message(chat_id, game["pinned_msg_id"])
+            game["pinned_msg_id"] = None
+        except Exception:
+            pass
 
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
@@ -673,6 +704,14 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("لا توجد لعبة نشطة حالياً!")
         return
     game = games[chat_id]
+    
+    # فك التثبيت لو تم إيقاف اللعبة قسرياً وفي رسالة معلقة
+    if game.get("pinned_msg_id"):
+        try:
+            await context.bot.unpin_chat_message(chat_id, game["pinned_msg_id"])
+        except Exception:
+            pass
+            
     if game["timeout_task"] and game["timeout_task"] != asyncio.current_task() and not game["timeout_task"].done(): 
         game["timeout_task"].cancel()
     del games[chat_id]
@@ -692,9 +731,6 @@ def main():
     app.add_handler(CallbackQueryHandler(vote_callback,   pattern="^(vote_.*|skip_vote)"))
 
     # ── إعدادات الـ Webhook ──────────────────────────────────
-    # PORT: يوفرها Render تلقائياً في متغير البيئة PORT
-    # WEBHOOK_URL: رابط خدمتك على Render (مثال: https://your-app.onrender.com)
-    #              بدون علامة / في النهاية
     port = int(os.environ.get("PORT", "8080"))
     webhook_url = os.environ.get("WEBHOOK_URL", "").rstrip("/")
 
@@ -707,8 +743,8 @@ def main():
     app.run_webhook(
         listen="0.0.0.0",
         port=port,
-        url_path=TOKEN,                       # مسار سري يحتوي التوكن
-        webhook_url=f"{webhook_url}/{TOKEN}",  # الرابط الكامل الذي يرسله تيليجرام
+        url_path=TOKEN,                       
+        webhook_url=f"{webhook_url}/{TOKEN}",  
     )
 
 if __name__ == "__main__":
